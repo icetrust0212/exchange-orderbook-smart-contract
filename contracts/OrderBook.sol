@@ -68,7 +68,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // remove fullfilled order from active sell order list
                 // removeLastFromSellLimitOrder();
                 // send matic to seller
-                payable(sellOrder.trader).transfer(desiredMaticValue);
+                payable(sellOrder.trader).transfer(desiredMaticValue - desiredMaticValue * sellAdderBIPS / BASE_BIPS);
                 // decrease remain matic value
                 marketOrder.remainMaticValue -= desiredMaticValue;
                 tokenAmount += sellOrder.remainQuantity;
@@ -80,7 +80,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // partially fill sell limitOrder
                 // send matic to seller
                 payable(sellOrder.trader).transfer(
-                    marketOrder.remainMaticValue
+                    marketOrder.remainMaticValue - desiredMaticValue * sellAdderBIPS / BASE_BIPS
                 );
                 uint256 purchasedTokenAmount = marketOrder.remainMaticValue /
                     sellOrder.desiredPrice;
@@ -102,7 +102,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         cleanLimitOrders();
 
         // transfer token to buyer
-        IERC20(tokenAddress).transfer(msg.sender, tokenAmount);
+        IERC20(tokenAddress).transfer(msg.sender, tokenAmount - tokenAmount * buyAdderBIPS / BASE_BIPS);
         OrderCountByUser[msg.sender]++;
     }
 
@@ -155,7 +155,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // send token to buyer
                 IERC20(tokenAddress).transfer(
                     buyOrder.trader,
-                    desiredTokenAmount
+                    desiredTokenAmount - desiredTokenAmount * buyAdderBIPS / BASE_BIPS 
                 );
                 // decrease remain token amount
                 marketOrder.remainQuantity -= desiredTokenAmount;
@@ -170,7 +170,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // send token to buyer
                 IERC20(tokenAddress).transfer(
                     buyOrder.trader,
-                    marketOrder.remainQuantity
+                    marketOrder.remainQuantity - marketOrder.remainQuantity * buyAdderBIPS / BASE_BIPS 
                 );
                 uint256 usedMaticAmount = marketOrder.remainQuantity *
                     buyOrder.desiredPrice;
@@ -193,7 +193,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         cleanLimitOrders();
 
         // transfer token to buyer
-        payable(msg.sender).transfer(maticAmount);
+        payable(msg.sender).transfer(maticAmount - maticAmount * sellAdderBIPS / BASE_BIPS);
         OrderCountByUser[msg.sender]++;
     }
 
@@ -318,13 +318,13 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             uint256 sellerDesiredMaticAmount = sellOrder.desiredPrice *
                 tokenAmount;
             // send matic to seller
-            payable(sellOrder.trader).transfer(sellerDesiredMaticAmount);
+            payable(sellOrder.trader).transfer(sellerDesiredMaticAmount - sellerDesiredMaticAmount * sellAdderBIPS / BASE_BIPS);
             // decrease remain matic value
             buyOrder.remainMaticValue -= sellerDesiredMaticAmount;
             buyOrder.remainQuantity -= tokenAmount;
             buyOrder.lastTradeTimestamp = block.timestamp;
 
-            IERC20(tokenAddress).transfer(buyOrder.trader, tokenAmount);
+            IERC20(tokenAddress).transfer(buyOrder.trader, tokenAmount - tokenAmount * buyAdderBIPS / BASE_BIPS);
             sellOrder.remainQuantity -= tokenAmount;
             sellOrder.lastTradeTimestamp = block.timestamp;
 
