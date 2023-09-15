@@ -8,6 +8,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 
 contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
+    receive() payable external{
+
+    }
     Order[] public activeBuyOrders;
     Order[] public activeSellOrders;
     Order[] public fullfilledOrders;
