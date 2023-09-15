@@ -15,11 +15,19 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     address public tokenAddress;
     uint256 public nonce = 0;
 
+    uint256 public constant BASE_BIPS = 10000;
+    uint256 public buyAdderBIPS;
+    uint256 public sellAdderBIPS;
+
     mapping(address => uint256) public OrderCountByUser; // Add Count
 
-    constructor(address _token) {
+    constructor(address _token, uint256 _buyAdderBIPS, uint256 _sellAdderBIPS) {
         require(_token != address(0), "Invalid Token");
+        require(_buyAdderBIPS < BASE_BIPS, "Invalid Buy Fee");
+        require(_sellAdderBIPS < BASE_BIPS, "Invalid Sell Fee");
         tokenAddress = _token;
+        buyAdderBIPS = _buyAdderBIPS;
+        sellAdderBIPS = _sellAdderBIPS;
     }
 
     /**
@@ -543,7 +551,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 return (order.maticValue == 0, order.id);
             }
        }
-       
+
        for (uint256 i = 0; i < activeSellOrders.length; i ++) {
             Order memory order = activeSellOrders[i];
             if ( id == order.id ) {
@@ -551,5 +559,17 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             }
        }
        revert("Invalid Id");
+    }
+
+    function setBuyAdderBIPS(uint256 _buyAdderBIPS) external onlyOwner {
+        require(buyAdderBIPS != _buyAdderBIPS, "Same BuyAdderBIPS");
+        require(_buyAdderBIPS < BASE_BIPS, "Invalid BuyAdderBIPS");
+        buyAdderBIPS = _buyAdderBIPS;
+    }
+
+    function setSellAdderBIPS(uint256 _sellAdderBIPS) external onlyOwner {
+        require(sellAdderBIPS != _sellAdderBIPS, "Invalid SellAdderBIPS");
+        require(_sellAdderBIPS < BASE_BIPS, "Invalid SellAdderBIPS");
+        sellAdderBIPS = _sellAdderBIPS;
     }
 }
