@@ -15,6 +15,8 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     address public tokenAddress;
     uint256 public nonce = 0;
 
+    mapping(address => uint256) public OrderCountByUser; // Add Count
+
     constructor(address _token) {
         require(_token != address(0), "Invalid Token");
         tokenAddress = _token;
@@ -93,6 +95,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
         // transfer token to buyer
         IERC20(tokenAddress).transfer(msg.sender, tokenAmount);
+        OrderCountByUser[msg.sender]++;
     }
 
     function removeLastFromSellLimitOrder() internal {
@@ -183,6 +186,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
         // transfer token to buyer
         payable(msg.sender).transfer(maticAmount);
+        OrderCountByUser[msg.sender]++;
     }
 
     function removeLastFromBuyLimitOrder() internal {
@@ -246,6 +250,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         if (activeBuyOrders.length > 0 && activeSellOrders.length > 0) {
             executeLimitOrders();
         }
+        OrderCountByUser[msg.sender]++;
     }
 
     // Sort ASC [0, 1, 2, ...]
@@ -410,8 +415,104 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         }
     }
 
-    function getOrderById(uint256 id) external view returns (Order memory) {
-        
+    function getOrderById(uint256 id) public view returns (Order memory) {
+       require(id > 0 && id < nonce, "Invalid Id");
+       for (uint256 i = 0; i < activeBuyOrders.length; i ++) {
+            Order memory order = activeBuyOrders[i];
+            if ( id == order.id) {
+                return order;
+            }
+       }
+       for (uint256 i = 0; i < activeSellOrders.length; i ++) {
+            Order memory order = activeSellOrders[i];
+            if ( id == order.id) {
+                return order;
+            }
+       }
+       for (uint256 i = 0; i < fullfilledOrders.length; i ++) {
+            Order memory order = fullfilledOrders[i];
+            if ( id == order.id) {
+                return order;
+            }
+       }
+
+       revert("Invalid Order");
+    }
+
+    function getOrdersByUser(
+        address user
+    ) external view returns (Order[] memory, Order[] memory, Order[] memory) {
+        require(OrderCountByUser[user] > 0, "User did not make any order");
+        Order[] memory activeBuyOrdersByUser = new Order[](OrderCountByUser[user]);
+        uint256 k;
+        for (uint256 i = 0; i < activeBuyOrders.length; i ++) {
+            Order memory order = activeBuyOrders[i];
+            if ( user == order.trader) {
+                activeBuyOrdersByUser[k] = order;
+                k++;
+            }
+        }
+        uint256 toDrop1 = OrderCountByUser[user] - k;
+        if (toDrop1 > 0) {
+            assembly {
+                mstore(activeBuyOrdersByUser, sub(mload(activeBuyOrdersByUser), toDrop1))
+            }
+        }
+        k = 0;
+
+        Order[] memory activeSellOrdersByUser = new Order[](OrderCountByUser[user]);
+        for (uint256 i = 0; i < activeSellOrders.length; i ++) {
+            Order memory order = activeSellOrders[i];
+            if (user == order.trader) {
+                activeSellOrdersByUser[k] = order;
+                k++;
+            }
+        }
+        uint256 toDrop2 = OrderCountByUser[user] - k;
+        if (toDrop2 > 0) {
+            assembly {
+                mstore(activeBuyOrdersByUser, sub(mload(activeBuyOrdersByUser), toDrop2))
+            }
+        }
+        k = 0;
+
+        Order[] memory fullfilledOrdersByUser = new Order[](OrderCountByUser[user]);
+        for (uint256 i = 0; i < fullfilledOrders.length; i ++) {
+            Order memory order = fullfilledOrders[i];
+            if (user == order.trader) {
+                fullfilledOrdersByUser[k] = order;
+                k++;
+            }
+        }
+        uint256 toDrop3 = OrderCountByUser[user] - k;
+        if (toDrop3 > 0) {
+            assembly {
+                mstore(fullfilledOrdersByUser, sub(mload(fullfilledOrdersByUser), toDrop3))
+            }
+        }
+
+        return (activeBuyOrdersByUser, activeSellOrdersByUser, fullfilledOrdersByUser);
+    }
+
+    function cancelOrder(uint256 id) external returns(bool) {
+        require(id > 0 && id < nonce, "Invalid Id");
+        (bool isActiveBuyOrder, uint256 i) = getIndex(id);
+        Order storage order = isActiveBuyOrder ? activeBuyOrders[i] : activeSellOrders[i];
+        require(order.trader == msg.sender, "Invaild User");
+
+        order.isFilled = true;
+        order.isCanceled = true;
+
+        if (isActiveBuyOrder) {
+            payable(order.trader).transfer(order.remainMaticValue);
+        } else {
+            IERC20(tokenAddress).transfer(
+                order.trader,
+                order.remainQuantity
+            );
+        }
+
+        return true;
     }
 
     function withDrawMatic(uint256 amount) external onlyOwner returns (bool) {
@@ -433,5 +534,22 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         );
         IERC20(tokenAddress).transfer(msg.sender, amount);
         return true;
+    }
+
+    function getIndex(uint256 id) public view returns (bool, uint256) {
+        for (uint256 i = 0; i < activeBuyOrders.length; i ++) {
+            Order memory order = activeBuyOrders[i];
+            if ( id == order.id ) {
+                return (order.maticValue == 0, order.id);
+            }
+       }
+       
+       for (uint256 i = 0; i < activeSellOrders.length; i ++) {
+            Order memory order = activeSellOrders[i];
+            if ( id == order.id ) {
+                return (order.maticValue == 0, order.id);
+            }
+       }
+       revert("Invalid Id");
     }
 }

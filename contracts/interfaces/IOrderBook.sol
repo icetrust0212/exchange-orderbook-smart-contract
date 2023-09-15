@@ -19,7 +19,7 @@ interface IOrderBook {
         uint256 remainMaticValue; // remain matic amount. This is available for buy market order only
         bool isFilled;
         bool isMarketOrder;
-        bool isReverted;
+        bool isCanceled;
         uint256 timeInForce; // 
         uint256 lastTradeTimestamp;
     }
