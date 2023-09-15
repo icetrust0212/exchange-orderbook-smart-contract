@@ -19,18 +19,20 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     uint256 public nonce = 0;
 
     uint256 public constant BASE_BIPS = 10000;
-    uint256 public buyAdderBIPS;
-    uint256 public sellAdderBIPS;
+    uint256 public buyFeeBips;
+    uint256 public sellFeeBips;
+
+    address public treasury;
 
     mapping(address => uint256) public OrderCountByUser; // Add Count
 
-    constructor(address _token, uint256 _buyAdderBIPS, uint256 _sellAdderBIPS) {
+    constructor(address _token, uint256 _buyFeeBips, uint256 _sellFeeBips) {
         require(_token != address(0), "Invalid Token");
-        require(_buyAdderBIPS < BASE_BIPS, "Invalid Buy Fee");
-        require(_sellAdderBIPS < BASE_BIPS, "Invalid Sell Fee");
+        require(_buyFeeBips < BASE_BIPS, "Invalid Buy Fee");
+        require(_sellFeeBips < BASE_BIPS, "Invalid Sell Fee");
         tokenAddress = _token;
-        buyAdderBIPS = _buyAdderBIPS;
-        sellAdderBIPS = _sellAdderBIPS;
+        buyFeeBips = _buyFeeBips;
+        sellFeeBips = _sellFeeBips;
     }
 
     /**
@@ -71,7 +73,10 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // remove fullfilled order from active sell order list
                 // removeLastFromSellLimitOrder();
                 // send matic to seller
-                payable(sellOrder.trader).transfer(desiredMaticValue - desiredMaticValue * sellAdderBIPS / BASE_BIPS);
+                (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(desiredMaticValue, OrderType.SELL);
+                payable(sellOrder.trader).transfer(realAmount);
+                payable(treasury).transfer(feeAmount); // charge fee
+
                 // decrease remain matic value
                 marketOrder.remainMaticValue -= desiredMaticValue;
                 tokenAmount += sellOrder.remainQuantity;
@@ -82,9 +87,11 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             } else {
                 // partially fill sell limitOrder
                 // send matic to seller
-                payable(sellOrder.trader).transfer(
-                    marketOrder.remainMaticValue - desiredMaticValue * sellAdderBIPS / BASE_BIPS
-                );
+
+                (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(marketOrder.remainMaticValue, OrderType.SELL);
+                payable(sellOrder.trader).transfer(realAmount);
+                payable(treasury).transfer(feeAmount);
+
                 uint256 purchasedTokenAmount = marketOrder.remainMaticValue /
                     sellOrder.desiredPrice;
                 marketOrder.remainMaticValue = 0;
@@ -105,7 +112,10 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         cleanLimitOrders();
 
         // transfer token to buyer
-        IERC20(tokenAddress).transfer(msg.sender, tokenAmount - tokenAmount * buyAdderBIPS / BASE_BIPS);
+        (uint256 _realAmount, uint256 _feeAmount) = getAmountDeductFee(tokenAmount, OrderType.BUY);
+        IERC20(tokenAddress).transfer(msg.sender, _realAmount);
+        IERC20(tokenAddress).transfer(treasury, _feeAmount);
+
         OrderCountByUser[msg.sender]++;
     }
 
@@ -156,9 +166,14 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // remove fullfilled order from active buy order list
                 // removeLastFromBuyLimitOrder();
                 // send token to buyer
+                (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(desiredTokenAmount, OrderType.BUY);
                 IERC20(tokenAddress).transfer(
                     buyOrder.trader,
-                    desiredTokenAmount - desiredTokenAmount * buyAdderBIPS / BASE_BIPS 
+                    realAmount
+                );
+                IERC20(tokenAddress).transfer(
+                    treasury,
+                    feeAmount
                 );
                 // decrease remain token amount
                 marketOrder.remainQuantity -= desiredTokenAmount;
@@ -171,9 +186,14 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             } else {
                 // partially fill buy limitOrder
                 // send token to buyer
+                (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(marketOrder.remainQuantity, OrderType.BUY);
                 IERC20(tokenAddress).transfer(
                     buyOrder.trader,
-                    marketOrder.remainQuantity - marketOrder.remainQuantity * buyAdderBIPS / BASE_BIPS 
+                    realAmount 
+                );
+                IERC20(tokenAddress).transfer(
+                    buyOrder.trader,
+                    feeAmount 
                 );
                 uint256 usedMaticAmount = marketOrder.remainQuantity *
                     buyOrder.desiredPrice;
@@ -196,7 +216,10 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         cleanLimitOrders();
 
         // transfer token to buyer
-        payable(msg.sender).transfer(maticAmount - maticAmount * sellAdderBIPS / BASE_BIPS);
+        (uint256 _realAmount, uint256 _feeAmount) = getAmountDeductFee(maticAmount, OrderType.SELL);
+        payable(msg.sender).transfer(_realAmount);
+        payable(treasury).transfer(_feeAmount);
+
         OrderCountByUser[msg.sender]++;
     }
 
@@ -321,13 +344,18 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             uint256 sellerDesiredMaticAmount = sellOrder.desiredPrice *
                 tokenAmount;
             // send matic to seller
-            payable(sellOrder.trader).transfer(sellerDesiredMaticAmount - sellerDesiredMaticAmount * sellAdderBIPS / BASE_BIPS);
+            (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(sellerDesiredMaticAmount, OrderType.SELL);
+            payable(sellOrder.trader).transfer(realAmount);
+            payable(treasury).transfer(feeAmount);
             // decrease remain matic value
             buyOrder.remainMaticValue -= sellerDesiredMaticAmount;
             buyOrder.remainQuantity -= tokenAmount;
             buyOrder.lastTradeTimestamp = block.timestamp;
 
-            IERC20(tokenAddress).transfer(buyOrder.trader, tokenAmount - tokenAmount * buyAdderBIPS / BASE_BIPS);
+            (uint256 _realAmount, uint256 _feeAmount) = getAmountDeductFee(tokenAmount, OrderType.BUY);
+            IERC20(tokenAddress).transfer(buyOrder.trader, _realAmount);
+            IERC20(tokenAddress).transfer(treasury, _feeAmount);
+
             sellOrder.remainQuantity -= tokenAmount;
             sellOrder.lastTradeTimestamp = block.timestamp;
 
@@ -353,6 +381,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
     function isInvalidOrder(Order memory order) public view returns (bool) {
         return
+            order.isCanceled ||
             order.isFilled ||
             order.timeInForce < block.timestamp ||
             order.remainQuantity == 0;
@@ -376,13 +405,15 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     function getLatestRate()
         external
         view
-        returns (Order memory, Order memory)
+        returns (Order memory bestBidOrder, Order memory bestAskOrder)
     {
-        Order memory bestBidOrder = activeBuyOrders[activeBuyOrders.length - 1];
-        Order memory bestAskOrder = activeSellOrders[
-            activeSellOrders.length - 1
-        ];
-        return (bestBidOrder, bestAskOrder);
+        if (activeBuyOrders.length > 0)  {
+          bestBidOrder = activeBuyOrders[activeBuyOrders.length - 1];
+        }
+
+        if (activeSellOrders.length > 0) {
+            bestAskOrder = activeSellOrders[activeSellOrders.length - 1];
+        }
     }
 
     function orderBook(
@@ -390,12 +421,8 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         OrderType orderType
     ) external view returns (Order[] memory) {
         if (orderType == OrderType.BUY) {
-            require(
-                depth <= activeBuyOrders.length,
-                "Depth could not be larger than activeBuyOrders length"
-            );
             Order[] memory bestActiveBuyOrders = new Order[](depth);
-            if (depth == activeBuyOrders.length) {
+            if (depth >= activeBuyOrders.length) {
                 return activeBuyOrders;
             }
             for (
@@ -407,12 +434,8 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             }
             return bestActiveBuyOrders;
         } else {
-            require(
-                depth <= activeSellOrders.length,
-                "Depth could not be larger than activeSellOrders length"
-            );
             Order[] memory bestActiveSellOrders = new Order[](depth);
-            if (depth == activeSellOrders.length) {
+            if (depth >= activeSellOrders.length) {
                 return activeSellOrders;
             }
             for (
@@ -482,7 +505,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         uint256 toDrop2 = OrderCountByUser[user] - k;
         if (toDrop2 > 0) {
             assembly {
-                mstore(activeBuyOrdersByUser, sub(mload(activeBuyOrdersByUser), toDrop2))
+                mstore(activeSellOrdersByUser, sub(mload(activeSellOrdersByUser), toDrop2))
             }
         }
         k = 0;
@@ -506,15 +529,14 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     }
 
     function cancelOrder(uint256 id) external returns(bool) {
-        require(id > 0 && id < nonce, "Invalid Id");
-        (bool isActiveBuyOrder, uint256 i) = getIndex(id);
-        Order storage order = isActiveBuyOrder ? activeBuyOrders[i] : activeSellOrders[i];
-        require(order.trader == msg.sender, "Invaild User");
+        require(id < nonce, "Invalid Id");
+        (OrderType orderType, uint256 i) = getIndex(id);
+        Order storage order = orderType == OrderType.BUY ? activeBuyOrders[i] : activeSellOrders[i];
+        require(order.trader == msg.sender, "Not owner of Order");
 
-        order.isFilled = true;
         order.isCanceled = true;
 
-        if (isActiveBuyOrder) {
+        if (orderType == OrderType.BUY) {
             payable(order.trader).transfer(order.remainMaticValue);
         } else {
             IERC20(tokenAddress).transfer(
@@ -526,53 +548,39 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         return true;
     }
 
-    function withDrawMatic(uint256 amount) external onlyOwner returns (bool) {
-        require(
-            amount > 0 && amount <= address(this).balance,
-            "Invalid amount"
-        );
-        payable(msg.sender).transfer(address(this).balance);
-        return true;
-    }
-
-    function withdrawTokens(
-        uint256 amount
-    ) external onlyOwner returns (bool success) {
-        require(
-            amount > 0 &&
-                amount <= IERC20(tokenAddress).balanceOf(address(this)),
-            "Invalid amount"
-        );
-        IERC20(tokenAddress).transfer(msg.sender, amount);
-        return true;
-    }
-
-    function getIndex(uint256 id) public view returns (bool, uint256) {
+    function getIndex(uint256 id) public view returns (OrderType, uint256) {
         for (uint256 i = 0; i < activeBuyOrders.length; i ++) {
             Order memory order = activeBuyOrders[i];
             if ( id == order.id ) {
-                return (order.maticValue == 0, order.id);
+                return (OrderType.BUY, i);
             }
        }
 
        for (uint256 i = 0; i < activeSellOrders.length; i ++) {
             Order memory order = activeSellOrders[i];
             if ( id == order.id ) {
-                return (order.maticValue == 0, order.id);
+                return (OrderType.SELL, i);
             }
        }
        revert("Invalid Id");
     }
 
-    function setBuyAdderBIPS(uint256 _buyAdderBIPS) external onlyOwner {
-        require(buyAdderBIPS != _buyAdderBIPS, "Same BuyAdderBIPS");
-        require(_buyAdderBIPS < BASE_BIPS, "Invalid BuyAdderBIPS");
-        buyAdderBIPS = _buyAdderBIPS;
+    function setbuyFeeBips(uint256 _buyFeeBips) external onlyOwner {
+        require(buyFeeBips != _buyFeeBips, "Same buyFeeBips");
+        require(_buyFeeBips < BASE_BIPS, "Invalid buyFeeBips");
+        buyFeeBips = _buyFeeBips;
     }
 
-    function setSellAdderBIPS(uint256 _sellAdderBIPS) external onlyOwner {
-        require(sellAdderBIPS != _sellAdderBIPS, "Invalid SellAdderBIPS");
-        require(_sellAdderBIPS < BASE_BIPS, "Invalid SellAdderBIPS");
-        sellAdderBIPS = _sellAdderBIPS;
+    function setsellFeeBips(uint256 _sellFeeBips) external onlyOwner {
+        require(sellFeeBips != _sellFeeBips, "Invalid sellFeeBips");
+        require(_sellFeeBips < BASE_BIPS, "Invalid sellFeeBips");
+        sellFeeBips = _sellFeeBips;
+    }
+
+    function getAmountDeductFee(uint256 amount, OrderType orderType) internal view returns(uint256 realAmount, uint256 feeAmount) {
+        uint256 feeBips = orderType == OrderType.BUY ? buyFeeBips : sellFeeBips;
+
+        realAmount = amount * (BASE_BIPS - feeBips);
+        feeAmount = amount - realAmount;
     }
 }
