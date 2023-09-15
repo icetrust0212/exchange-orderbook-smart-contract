@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {OrderBookLib} from "./libraries/OrderBookLib.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 
 contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
@@ -45,6 +43,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         nonce++;
 
         uint256 tokenAmount = 0;
+        require(activeSellOrders.length > 0, "Insufficient SellOrders");
         for (uint256 i = activeSellOrders.length - 1; i >= 0; i--) {
             Order storage sellOrder = activeSellOrders[i];
             if (isInvalidOrder(sellOrder)) {
@@ -80,6 +79,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 sellOrder.remainQuantity -= purchasedTokenAmount;
                 tokenAmount += purchasedTokenAmount;
                 sellOrder.lastTradeTimestamp = block.timestamp;
+                break;
             }
         }
 
@@ -89,6 +89,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         }
 
         fullfilledOrders.push(marketOrder);
+        cleanLimitOrders();
 
         // transfer token to buyer
         IERC20(tokenAddress).transfer(msg.sender, tokenAmount);
@@ -127,6 +128,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         nonce++;
 
         uint256 maticAmount = 0;
+        require(activeBuyOrders.length > 0, "Insufficient BuyOrders");
         for (uint256 i = activeBuyOrders.length - 1; i >= 0; i--) {
             Order storage buyOrder = activeBuyOrders[i];
             if (isInvalidOrder(buyOrder)) {
@@ -167,6 +169,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 maticAmount += usedMaticAmount;
                 buyOrder.lastTradeTimestamp = block.timestamp;
                 marketOrder.remainQuantity = 0;
+                break;
             }
         }
 
@@ -176,6 +179,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         }
 
         fullfilledOrders.push(marketOrder);
+        cleanLimitOrders();
 
         // transfer token to buyer
         payable(msg.sender).transfer(maticAmount);
@@ -202,6 +206,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 "Invalid matic amount"
             );
         } else {
+            require(msg.value == 0, "Invalid matic amount");
             IERC20(tokenAddress).transferFrom(
                 msg.sender,
                 address(this),
@@ -226,7 +231,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             0
         );
 
-        nonce ++;
+        nonce++;
 
         // Insert newOrder into active sell/buy limit order list. It should be sorted by desiredPrice
         // For Sell orders, we sort it DESC, so it should be [9,8,.., 2,1,0]
@@ -238,7 +243,9 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             insertSellLimitOrder(newOrder);
         }
 
-        executeLimitOrders();
+        if (activeBuyOrders.length > 0 && activeSellOrders.length > 0) {
+            executeLimitOrders();
+        }
     }
 
     // Sort ASC [0, 1, 2, ...]
@@ -269,7 +276,6 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             newLimitSellOrder.desiredPrice
         ) {
             activeSellOrders[i] = activeSellOrders[i - 1];
-
             i--;
         }
 
@@ -281,7 +287,10 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     function executeLimitOrders() public {
         // clean
         cleanLimitOrders();
-        require(activeBuyOrders.length > 0 && activeSellOrders.length > 0, "No Sell or Buy limit orders exist");
+        require(
+            activeBuyOrders.length > 0 && activeSellOrders.length > 0,
+            "No Sell or Buy limit orders exist"
+        );
 
         Order storage buyOrder = activeBuyOrders[activeBuyOrders.length - 1];
         Order storage sellOrder = activeSellOrders[activeSellOrders.length - 1];
@@ -302,10 +311,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             buyOrder.remainQuantity -= tokenAmount;
             buyOrder.lastTradeTimestamp = block.timestamp;
 
-            IERC20(tokenAddress).transfer(
-                buyOrder.trader,
-                tokenAmount
-            );
+            IERC20(tokenAddress).transfer(buyOrder.trader, tokenAmount);
             sellOrder.remainQuantity -= tokenAmount;
             sellOrder.lastTradeTimestamp = block.timestamp;
 
@@ -313,30 +319,119 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 buyOrder.isFilled = true;
                 if (buyOrder.remainMaticValue > 0) {
                     // refund
-                    payable(buyOrder.trader).transfer(buyOrder.remainMaticValue);
+                    payable(buyOrder.trader).transfer(
+                        buyOrder.remainMaticValue
+                    );
                     buyOrder.remainMaticValue = 0;
                 }
                 // fullfilledOrders.push(buyOrder);
-                // removeLastFromBuyLimitOrder();
+                removeLastFromBuyLimitOrder();
             }
             if (sellOrder.remainQuantity == 0) {
                 sellOrder.isFilled = true;
                 // fullfilledOrders.push(sellOrder);
-                // removeLastFromSellLimitOrder();
+                removeLastFromSellLimitOrder();
             }
         }
     }
 
-    function isInvalidOrder(Order memory order) public view returns(bool) {
-        return order.isFilled || order.timeInForce < block.timestamp || order.remainQuantity == 0;
+    function isInvalidOrder(Order memory order) public view returns (bool) {
+        return
+            order.isFilled ||
+            order.timeInForce < block.timestamp ||
+            order.remainQuantity == 0;
     }
 
     function cleanLimitOrders() internal {
-        while(activeBuyOrders.length > 0 && isInvalidOrder(activeBuyOrders[activeBuyOrders.length - 1])) {
+        while (
+            activeBuyOrders.length > 0 &&
+            isInvalidOrder(activeBuyOrders[activeBuyOrders.length - 1])
+        ) {
             removeLastFromBuyLimitOrder();
         }
-        while(activeSellOrders.length > 0 && isInvalidOrder(activeSellOrders[activeSellOrders.length - 1])) {
+        while (
+            activeSellOrders.length > 0 &&
+            isInvalidOrder(activeSellOrders[activeSellOrders.length - 1])
+        ) {
             removeLastFromSellLimitOrder();
         }
+    }
+
+    function getLatestRate()
+        external
+        view
+        returns (Order memory, Order memory)
+    {
+        Order memory bestBidOrder = activeBuyOrders[activeBuyOrders.length - 1];
+        Order memory bestAskOrder = activeSellOrders[
+            activeSellOrders.length - 1
+        ];
+        return (bestBidOrder, bestAskOrder);
+    }
+
+    function orderBook(
+        uint256 depth,
+        OrderType orderType
+    ) external view returns (Order[] memory) {
+        if (orderType == OrderType.BUY) {
+            require(
+                depth <= activeBuyOrders.length,
+                "Depth could not be larger than activeBuyOrders length"
+            );
+            Order[] memory bestActiveBuyOrders = new Order[](depth);
+            if (depth == activeBuyOrders.length) {
+                return activeBuyOrders;
+            }
+            for (
+                uint256 i = activeBuyOrders.length - 1;
+                i >= activeBuyOrders.length - depth;
+                i--
+            ) {
+                bestActiveBuyOrders[i] = activeBuyOrders[i];
+            }
+            return bestActiveBuyOrders;
+        } else {
+            require(
+                depth <= activeSellOrders.length,
+                "Depth could not be larger than activeSellOrders length"
+            );
+            Order[] memory bestActiveSellOrders = new Order[](depth);
+            if (depth == activeSellOrders.length) {
+                return activeSellOrders;
+            }
+            for (
+                uint256 i = activeSellOrders.length - 1;
+                i >= activeSellOrders.length - depth;
+                i--
+            ) {
+                bestActiveSellOrders[i] = activeBuyOrders[i];
+            }
+            return bestActiveSellOrders;
+        }
+    }
+
+    function getOrderById(uint256 id) external view returns (Order memory) {
+        
+    }
+
+    function withDrawMatic(uint256 amount) external onlyOwner returns (bool) {
+        require(
+            amount > 0 && amount <= address(this).balance,
+            "Invalid amount"
+        );
+        payable(msg.sender).transfer(address(this).balance);
+        return true;
+    }
+
+    function withdrawTokens(
+        uint256 amount
+    ) external onlyOwner returns (bool success) {
+        require(
+            amount > 0 &&
+                amount <= IERC20(tokenAddress).balanceOf(address(this)),
+            "Invalid amount"
+        );
+        IERC20(tokenAddress).transfer(msg.sender, amount);
+        return true;
     }
 }
