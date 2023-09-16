@@ -124,7 +124,7 @@ describe("Order book test", () => {
     it("Check order book status after buy",async () => {
       const { orderBook, owner, user1, token, treasury } = await loadFixture(basicFixture);
       const res = await orderBook.orderBook(3, OrderType.SELL);
-      console.log(res[1])
+      // console.log(res[1])
     })
 
     it("Create sell market order",async () => {
@@ -137,14 +137,157 @@ describe("Order book test", () => {
       await orderBook.connect(user2).createSellMarketOrder(sellTokenAmount);
       const afterMaticBalance = await ethers.provider.getBalance(user2.address);
 
-      // expect(afterMaticBalance.sub(beforeMaticBalance)).to.be.equals(estimatedSellableMaticAmount);
+      expect(estimatedSellableMaticAmount.sub(afterMaticBalance.sub(beforeMaticBalance))).to.below(estimatedSellableMaticAmount.div(100).mul(5)); // difference should be under 5%, this is due to gas fee
     })
 
     it("Check order book status after sell",async () => {
       const { orderBook, owner, user1, token, treasury } = await loadFixture(basicFixture);
       const res = await orderBook.orderBook(3, OrderType.BUY);
-      console.log(res[1])
+      // console.log(res[1])
     })
   })
+
+  describe("Add more limit orders", () => {
+    it("Add buy limit orders",async () => {
+      const { orderBook, owner, user1, user2, token, treasury } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
+
+      await orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.15"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY,
+        {
+          value: ethers.utils.parseEther("15")
+        }
+      );
+
+      await orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.11"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY,
+        {
+          value: ethers.utils.parseEther("11")
+        }
+      );
+
+      await orderBook.connect(user1).createLimitOrder(
+        ethers.utils.parseEther("0.18"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY,
+        {
+          value: ethers.utils.parseEther("18")
+        }
+      );
+
+      await orderBook.connect(user2).createLimitOrder(
+        ethers.utils.parseEther("0.13"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY,
+        {
+          value: ethers.utils.parseEther("13")
+        }
+      );
+    })
+    it("Add sell limit orders",async () => {
+      const { orderBook, owner, user1, user2, token, treasury } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
   
+      await orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.19"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+      );
+  
+      await orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.21"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+      );
+  
+      await orderBook.connect(user1).createLimitOrder(
+        ethers.utils.parseEther("0.25"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+      );
+  
+      await orderBook.connect(user2).createLimitOrder(
+        ethers.utils.parseEther("0.2"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+      );
+    })
+  
+    it("check status",async () => {
+      const { orderBook, owner, user1, user2, token, treasury } = await loadFixture(basicFixture);
+      console.log("Buys: ", await orderBook.orderBook(10, OrderType.BUY))
+      console.log("Sells: ", await orderBook.orderBook(10, OrderType.SELL))
+    })
+  }); 
+  
+  describe("Execute limit orders", () => {
+    it("Sell trading",async () => {
+      const { orderBook, owner, user1, user2, token, treasury, sellTrader } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
+
+      const sellTokenAmount = ethers.utils.parseEther("100");
+      const sellPrice = ethers.utils.parseEther("0.15");
+      const {bestBidOrder} = await orderBook.getLatestRate();
+      const estimatedSellableMaticAmount = sellTokenAmount.mul(9500).div(10000).mul(sellPrice).div(parseEther("1"));
+      const beforeMaticBalance = await ethers.provider.getBalance(sellTrader.address);
+      
+      await orderBook.connect(sellTrader).createLimitOrder(
+        sellPrice,
+        sellTokenAmount,
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+      );
+
+      const afterMaticBalance = await ethers.provider.getBalance(sellTrader.address);
+
+      expect(estimatedSellableMaticAmount.sub(afterMaticBalance.sub(beforeMaticBalance))).to.below(estimatedSellableMaticAmount.div(100).mul(1)); // difference should be under 5%, this is due to gas fee
+    })
+    it("check status",async () => {
+      const { orderBook, owner, user1, user2, token, treasury } = await loadFixture(basicFixture);
+      console.log("Buys: ", await orderBook.orderBook(10, OrderType.BUY))
+      // console.log("Sells: ", await orderBook.orderBook(10, OrderType.SELL))
+    })
+    it("Buy trading",async () => {
+      const { orderBook, owner, user1, user2, token, treasury, buyTrader } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
+
+      const maticAmount = ethers.utils.parseEther("20");
+      const buyPrice = ethers.utils.parseEther("0.2");
+
+      const {bestAskOrder} = await orderBook.getLatestRate();
+      const estimatedPurchasableTokenAmount = parseEther("1").mul(maticAmount).mul(9500).div(10000).div(bestAskOrder.maticValue);
+      const beforeTokenBalance = await token.balanceOf(buyTrader.address);
+      
+      await orderBook.connect(buyTrader).createLimitOrder(
+        buyPrice,
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY,
+        {
+          value: maticAmount
+        }
+      );
+
+      const afterTokenBalance = await token.balanceOf(buyTrader.address);
+
+      // expect(afterTokenBalance.sub(beforeTokenBalance)).to.be.equals(estimatedPurchasableTokenAmount);
+    })
+    it("check status",async () => {
+      const { orderBook, owner, user1, user2, token, treasury } = await loadFixture(basicFixture);
+      // console.log("Buys: ", await orderBook.orderBook(10, OrderType.BUY))
+      console.log("Sells: ", await orderBook.orderBook(10, OrderType.SELL))
+    })
+  });
 })
