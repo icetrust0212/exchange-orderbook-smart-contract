@@ -320,7 +320,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
     // We execute matched buy and sell orders one by one
     // This is called whenever new limit order is created, or can be called from backend intervally
-    function executeLimitOrders() public {
+    function executeLimitOrders() public nonReentrant {
         // clean
         cleanLimitOrders();
         require(
