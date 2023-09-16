@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+import { ethers, upgrades } from "hardhat";
 
 export async function basicFixture() {
     const [owner, treasury, user1, user2, user3, sellTrader, buyTrader] = await ethers.getSigners();
@@ -14,10 +14,16 @@ export async function basicFixture() {
     await oracle.deployed();
 
     const OrderBookFactory = await ethers.getContractFactory("OrderBook");
-    const orderBook = await OrderBookFactory.deploy(
-        token.address,
-        treasury.address,
-        oracle.address
+    const orderBook = await upgrades.deployProxy(
+        OrderBookFactory,
+        [
+            token.address,
+            treasury.address,
+            oracle.address
+        ],
+        {
+        initializer: "initialize",
+        }
     );
     await orderBook.deployed();
 

@@ -7,7 +7,7 @@ import "@typechain/hardhat";
 import "hardhat-gas-reporter";
 import "solidity-coverage";
 import "hardhat-deploy";
-import { utils } from 'ethers';
+import "@openzeppelin/hardhat-upgrades";
 
 dotenv.config();
 

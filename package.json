@@ -46,6 +46,8 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
+    "@openzeppelin/contracts-upgradeable": "^4.9.2",
+    "@openzeppelin/hardhat-upgrades": "^1.16.1",
     "hardhat-deploy": "^0.10.5",
     "keccak256": "^1.0.6",
     "merkletreejs": "^0.2.31",

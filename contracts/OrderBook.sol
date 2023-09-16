@@ -2,23 +2,29 @@
 
 pragma solidity ^0.8.4;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
 
-contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
+contract OrderBook is Initializable, IOrderBook, OwnableUpgradeable, ReentrancyGuardUpgradeable {
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+
     Order[] public activeBuyOrders;
     Order[] public activeSellOrders;
     Order[] public fullfilledOrders;
 
     address public tokenAddress;
 
-    uint256 public nonce = 0;
+    uint256 public nonce;
     uint256 private constant BASE_BIPS = 10000;
-    uint256 public buyFeeBips = 500;
-    uint256 public sellFeeBips = 500;
+    uint256 public buyFeeBips;
+    uint256 public sellFeeBips;
     // Price decimals. We set price wei unit. so 1 $ACME = 0.01 $Matic means price = 10 ** 16.
     uint256 private constant price_decimals = 18;
     address public treasury;
@@ -26,13 +32,16 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
     mapping(address => uint256) public OrderCountByUser; // Add Count
 
-    constructor(address _token, address _treasury, address _oracle) {
+    function initialize(address _token, address _treasury, address _oracle) public initializer {
         require(_token != address(0), "Invalid Token");
         require(_treasury != address(0), "Invalid Token");
         require(_oracle != address(0), "Invalid Token");
         tokenAddress = _token;
         treasury = _treasury;
         oracle = _oracle;
+        buyFeeBips = 500;
+        sellFeeBips = 500;
+        nonce = 0;
     }
 
     /**
@@ -114,8 +123,8 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
         // transfer token to buyer
         (uint256 _realAmount, uint256 _feeAmount) = getAmountDeductFee(tokenAmount, OrderType.BUY);
-        IERC20(tokenAddress).transfer(msg.sender, _realAmount);
-        IERC20(tokenAddress).transfer(treasury, _feeAmount);
+        IERC20Upgradeable(tokenAddress).safeTransfer(msg.sender, _realAmount);
+        IERC20Upgradeable(tokenAddress).safeTransfer(treasury, _feeAmount);
 
         OrderCountByUser[msg.sender]++;
     }
@@ -132,7 +141,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     function createSellMarketOrder(uint256 quantity) external nonReentrant {
         require(quantity > 0, "Invalid Token Amount");
         // Token should be left user wallet instantly
-        IERC20(tokenAddress).transferFrom(msg.sender, address(this), quantity);
+        IERC20Upgradeable(tokenAddress).safeTransferFrom(msg.sender, address(this), quantity);
 
         Order memory marketOrder = Order(
             nonce,
@@ -168,11 +177,11 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // removeLastFromBuyLimitOrder();
                 // send token to buyer
                 (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(desiredTokenAmount, OrderType.BUY);
-                IERC20(tokenAddress).transfer(
+                IERC20Upgradeable(tokenAddress).safeTransfer(
                     buyOrder.trader,
                     realAmount
                 );
-                IERC20(tokenAddress).transfer(
+                IERC20Upgradeable(tokenAddress).safeTransfer(
                     treasury,
                     feeAmount
                 );
@@ -188,11 +197,11 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 // partially fill buy limitOrder
                 // send token to buyer
                 (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(marketOrder.remainQuantity, OrderType.BUY);
-                IERC20(tokenAddress).transfer(
+                IERC20Upgradeable(tokenAddress).safeTransfer(
                     buyOrder.trader,
                     realAmount 
                 );
-                IERC20(tokenAddress).transfer(
+                IERC20Upgradeable(tokenAddress).safeTransfer(
                     buyOrder.trader,
                     feeAmount 
                 );
@@ -246,7 +255,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             );
         } else {
             require(msg.value == 0, "Invalid matic amount for createLimitSellOrder");
-            IERC20(tokenAddress).transferFrom(
+            IERC20Upgradeable(tokenAddress).safeTransferFrom(
                 msg.sender,
                 address(this),
                 quantity
@@ -354,8 +363,8 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             buyOrder.lastTradeTimestamp = block.timestamp;
 
             (uint256 _realAmount, uint256 _feeAmount) = getAmountDeductFee(tokenAmount, OrderType.BUY);
-            IERC20(tokenAddress).transfer(buyOrder.trader, _realAmount);
-            IERC20(tokenAddress).transfer(treasury, _feeAmount);
+            IERC20Upgradeable(tokenAddress).safeTransfer(buyOrder.trader, _realAmount);
+            IERC20Upgradeable(tokenAddress).safeTransfer(treasury, _feeAmount);
 
             sellOrder.remainQuantity -= tokenAmount;
             sellOrder.lastTradeTimestamp = block.timestamp;
@@ -554,7 +563,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         if (orderType == OrderType.BUY) {
             payable(order.trader).transfer(order.remainMaticValue);
         } else {
-            IERC20(tokenAddress).transfer(
+            IERC20Upgradeable(tokenAddress).safeTransfer(
                 order.trader,
                 order.remainQuantity
             );
