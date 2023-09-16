@@ -139,23 +139,19 @@ contract Oracle is AccessControl, IOracle {
 
     /// @notice External function that records a new price round
     /// @dev This function is only permitted to writers
-    /// @param timestamp Timestamp should be greater than last round's time, and less then current time.
     /// @param price Price of round, based 1e18
-    function writePrice(uint256 timestamp, uint256 price) external onlyWriter {
-        _writePrice(timestamp, price);
+    function writePrice(uint256 price) external onlyWriter {
+        _writePrice(block.timestamp, price);
     }
 
     /// @notice External function that records a new price round
     /// @dev This function is only permitted to writers
-    /// @param timestamps Array of timestamps
     /// @param prices Array of prices
     function writeBatchPrices(
-        uint256[] memory timestamps,
         uint256[] memory prices
     ) external onlyWriter {
-        require(timestamps.length == prices.length, "INVALID_ARRAY_LENGTH");
-        for (uint256 i = 0; i < timestamps.length; i++) {
-            _writePrice(timestamps[i], prices[i]);
+        for (uint256 i = 0; i < prices.length; i++) {
+            _writePrice(block.timestamp, prices[i]);
         }
         // FIXME you can save gas by not incrementing length ++ but by whole for each length here
     }

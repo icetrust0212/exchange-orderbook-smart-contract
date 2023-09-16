@@ -12,5 +12,5 @@ interface IOracle {
 
     function isWritable() external view returns (bool);
 
-    function writePrice(uint256 timestamp, uint256 price) external;
+    function writePrice(uint256 price) external;
 }
