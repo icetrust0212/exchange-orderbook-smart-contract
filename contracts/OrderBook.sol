@@ -13,23 +13,20 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     Order[] public fullfilledOrders;
 
     address public tokenAddress;
+
     uint256 public nonce = 0;
-
-    uint256 public constant BASE_BIPS = 10000;
-    uint256 public buyFeeBips;
-    uint256 public sellFeeBips;
-
+    uint256 private constant BASE_BIPS = 10000;
+    uint256 public buyFeeBips = 500;
+    uint256 public sellFeeBips = 500;
+    // Price decimals. We set price wei unit. so 1 $ACME = 0.01 $Matic means price = 10 ** 16.
+    uint256 private constant price_decimals = 18;
     address public treasury;
 
     mapping(address => uint256) public OrderCountByUser; // Add Count
 
-    constructor(address _token, uint256 _buyFeeBips, uint256 _sellFeeBips, address _treasury) {
+    constructor(address _token, address _treasury) {
         require(_token != address(0), "Invalid Token");
-        require(_buyFeeBips < BASE_BIPS, "Invalid Buy Fee");
-        require(_sellFeeBips < BASE_BIPS, "Invalid Sell Fee");
         tokenAddress = _token;
-        buyFeeBips = _buyFeeBips;
-        sellFeeBips = _sellFeeBips;
         treasury = _treasury;
     }
 
@@ -239,7 +236,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     ) external payable {
         if (orderType == OrderType.BUY) {
             require(
-                msg.value == desiredPrice * quantity,
+                msg.value == desiredPrice * quantity / 10 ** price_decimals,
                 "Invalid matic amount"
             );
         } else {
@@ -574,6 +571,11 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
         require(sellFeeBips != _sellFeeBips, "Invalid sellFeeBips");
         require(_sellFeeBips < BASE_BIPS, "Invalid sellFeeBips");
         sellFeeBips = _sellFeeBips;
+    }
+
+    function setTreasury(address _treasury) external onlyOwner {
+        require(_treasury != address(0), "Invalid address");
+        treasury = _treasury;
     }
 
     function getAmountDeductFee(uint256 amount, OrderType orderType) internal view returns(uint256 realAmount, uint256 feeAmount) {
