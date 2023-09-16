@@ -69,7 +69,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             }
 
             uint256 desiredMaticValue = sellOrder.desiredPrice *
-                sellOrder.remainQuantity;
+                sellOrder.remainQuantity / 10 ** price_decimals;
             if (marketOrder.remainMaticValue >= desiredMaticValue) {
                 // remove fullfilled order from active sell order list
                 // removeLastFromSellLimitOrder();
@@ -93,7 +93,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 payable(sellOrder.trader).transfer(realAmount);
                 payable(treasury).transfer(feeAmount);
 
-                uint256 purchasedTokenAmount = marketOrder.remainMaticValue /
+                uint256 purchasedTokenAmount = marketOrder.remainMaticValue * 10 ** price_decimals /
                     sellOrder.desiredPrice;
                 marketOrder.remainMaticValue = 0;
                 // decrease remain token amount of sell limitOrder
@@ -197,7 +197,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                     feeAmount 
                 );
                 uint256 usedMaticAmount = marketOrder.remainQuantity *
-                    buyOrder.desiredPrice;
+                    buyOrder.desiredPrice / 10 ** price_decimals;
                 // decrease remain token amount of sell limitOrder
                 buyOrder.remainMaticValue -= usedMaticAmount;
                 buyOrder.remainQuantity -= marketOrder.remainQuantity;

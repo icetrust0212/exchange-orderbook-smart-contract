@@ -1,133 +1,150 @@
-/* eslint-disable camelcase */
-import { ethers } from "hardhat";
-import { OrderBook, OrderBook__factory, TestToken, TestToken__factory } from "../typechain";
-import { BigNumber, Signer } from "ethers";
+import { loadFixture } from "ethereum-waffle"
+import { basicFixture } from "./fixture"
 import { expect } from "chai";
-import { getBlockTimeStamp } from "./utils/help";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { ethers } from "hardhat";
+import { OrderType } from "./utils/help";
+import { parseEther } from "ethers/lib/utils";
 
-describe("OrderBook", async () => {
-  let owner: Signer;
-  let user1 : Signer;
-  let treasury: Signer;
-  let OrderBook: OrderBook__factory;
-  let orderBook: OrderBook;
+describe("Order book test", () => {
+  describe("Create Market Order (without limit order)", () => {
+    it("Should be failed to create market order without limit order", async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
 
-  let Token: TestToken__factory;
-  let token: TestToken;
-  beforeEach(async () => {
-    Token = await ethers.getContractFactory("TestToken");
-    token = await Token.deploy(ethers.utils.parseEther("1000"));
-    await token.deployed();
-    
-    OrderBook = await ethers.getContractFactory("OrderBook");
-    [owner, user1, treasury] = await ethers.getSigners();
-    orderBook = await OrderBook.deploy(
-      token.address,
-      300,
-      200,
-      await treasury.getAddress()
-    );
-    await orderBook.deployed();
+      // buy order
+      await expect(orderBook.createBuyMarketOrder({ value: ethers.utils.parseEther("1") })).to.be.revertedWith("Insufficient SellOrders");
+      await expect(orderBook.createBuyMarketOrder()).to.be.revertedWith("Insufficient matic amount");
+
+      // sell order
+      await expect(orderBook.createSellMarketOrder(ethers.utils.parseEther("100"))).to.be.revertedWith("Insufficient BuyOrders");
+      await expect(orderBook.createSellMarketOrder(0)).to.be.revertedWith("Invalid Token Amount");
+    });
   });
 
-  // it("createBuyMarketOrder", async () => {
-  //   await expect(orderBook.createBuyMarketOrder()).to.be.revertedWith("Insufficient matic amount");
-  //   await expect(orderBook.createBuyMarketOrder({value: ethers.utils.parseEther("300")})).to.be.revertedWith("Insufficient SellOrders");
-  //   const blockTimeStamp: BigNumber = await getBlockTimeStamp();
+  describe("Limit Order", () => {
+    it("Create Buy limit order - should be reverted with insufficient matic amount", async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
 
-  //   // CreateSellLimitOrder with (Owner)
-  //   await token.approve(orderBook.address, ethers.utils.parseEther("200"));
-  //   await orderBook.createLimitOrder(1, ethers.utils.parseEther("100"), blockTimeStamp, 1);
-
-  //   const treasury1:BigNumber = await treasury.getBalance();
-  //   const userBalance1:BigNumber = await user1.getBalance();
-  //   await orderBook.connect(user1).createBuyMarketOrder({value: ethers.utils.parseEther("50")});
-  //   const treasury2:BigNumber = await treasury.getBalance();
-  //   const userBalance2:BigNumber = await user1.getBalance();
-
-    
-  //   // After createBuyMarketOrder, difference between userBalance1 and userBalance2 should be equals 50 matic.
-  //   // expect(userBalance1.sub(userBalance2)).to.be.equals(ethers.utils.parseEther("50"));
-  //   expect(await token.balanceOf(await user1.getAddress())).to.be.equals(ethers.utils.parseEther("48.5")); // fee 3%
-
-  //   // After createLimitOrder,
-  //   expect(await token.balanceOf(await owner.getAddress())).to.be.equals(ethers.utils.parseEther("900")); // 300 - 100
-
-  //   // After createLimitOrder treasury token and matic balance
-  //   expect(await token.balanceOf(await treasury.getAddress())).to.be.equals(ethers.utils.parseEther("1.5"));
-  //   expect(treasury2.sub(treasury1)).to.be.equals(ethers.utils.parseEther("1")); // fee 2%
-    
-  //   // expect(userBalance1.sub(userBalance2)).to.be.equals(ethers.utils.parseEther("50")); AssertionError: Expected "50002360144000000000" to be equal 50000000000000000000
-  
-  // });
-
-  // it("createSellMarketOrder", async () => {
-  //   await expect(orderBook.createSellMarketOrder(0)).to.be.revertedWith("Invalid Token Amount");
-  //   const blockTimeStamp: BigNumber = await getBlockTimeStamp();
-
-  //   // CreateSellLimitOrder with (Owner)
-  //   await token.approve(orderBook.address, ethers.utils.parseEther("200"));
-  //   await expect(orderBook.createSellMarketOrder(ethers.utils.parseEther("1"))).to.be.revertedWith("Insufficient BuyOrders");
-    
-  //   await orderBook.connect(user1).createLimitOrder(1, ethers.utils.parseEther("100"), blockTimeStamp, 0, {
-  //       value: ethers.utils.parseEther("100")
-  //   });
-    
-  //   const treasury1:BigNumber = await treasury.getBalance();
-  //   const ownerBalance1:BigNumber = await owner.getBalance();
-  //   await orderBook.createSellMarketOrder(ethers.utils.parseEther("50"));
-  //   const treasury2:BigNumber = await treasury.getBalance();
-  //   const ownerBalance2:BigNumber = await owner.getBalance();
-
-    
-  //   // // After createBuyMarketOrder, difference between userBalance1 and userBalance2 should be equals 50 matic.
-  //   // // expect(userBalance1.sub(userBalance2)).to.be.equals(ethers.utils.parseEther("50"));
-  //   expect(await token.balanceOf(await user1.getAddress())).to.be.equals(ethers.utils.parseEther("50")); // fee 3%
-  //   // expect(userBalance2.sub(userBalance1)).to.be.equals(ethers.utils.parseEther("48.5"));   Expected "48997621040000000000" to be equal 48500000000000000000
-
-  //   // // After createLimitOrder,
-  //   // expect(await token.balanceOf(await owner.getAddress())).to.be.equals(ethers.utils.parseEther("200")); // 300 - 100
-
-  //   // // After createLimitOrder treasury token and matic balance
-  //   // expect(await token.balanceOf(await treasury.getAddress())).to.be.equals(ethers.utils.parseEther("1.5"));
-  //   // expect(treasury2.sub(treasury1)).to.be.equals(ethers.utils.parseEther("1")); // fee 2%
-    
-  //   // expect(userBalance1.sub(userBalance2)).to.be.equals(ethers.utils.parseEther("50")); AssertionError: Expected "50002360144000000000" to be equal 50000000000000000000
-  
-  // });
-
-  it("createLimitOrder", async () => {
-    const blockTimeStamp: BigNumber = await getBlockTimeStamp();
-    await expect(orderBook.createLimitOrder(1, ethers.utils.parseEther("100"), blockTimeStamp, 0, {
-        value: ethers.utils.parseEther("50")
-    })).to.be.revertedWith("Invalid matic amount");
-    await expect(orderBook.createLimitOrder(1, ethers.utils.parseEther("100"), blockTimeStamp, 1, {
-        value: ethers.utils.parseEther("50")
-    })).to.be.revertedWith("Invalid matic amount for createLimitSellOrder");
-    // await expect(orderBook.createLimitOrder(1, ethers.utils.parseEther("100"), blockTimeStamp, 0, {
-    //     value: ethers.utils.parseEther("100")
-    // })).to.be.revertedWith("Invalid time limit");
-    await orderBook.connect(user1).createLimitOrder(2, ethers.utils.parseEther("100"), blockTimeStamp.add("10000"), 0, {
-        value: ethers.utils.parseEther("200")
-    });
-    await time.increase(3600);
-    await orderBook.connect(user1).createLimitOrder(3, ethers.utils.parseEther("100"), blockTimeStamp, 0, {
-        value: ethers.utils.parseEther("300")
+      await expect(orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.1"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY
+      )).to.be.revertedWith("Invalid matic amount");
     });
 
-    await token.approve(orderBook.address, ethers.utils.parseEther("1000"));
-    await time.increase(3600);
-    await orderBook.createLimitOrder(1, ethers.utils.parseEther("100"), blockTimeStamp, 1);
-    await time.increase(3600);
-    await orderBook.createLimitOrder(5, ethers.utils.parseEther("100"), blockTimeStamp, 1);
+    it("Create Sell limit order - should be reverted with some matic amount", async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
 
-    // console.log("activeBuyOrders", await orderBook.getLatestRate());
-    console.log("Best Order", await orderBook.getLatestRate());
-    
-    
-    // expect(await token.balanceOf(orderBook.address)).to.be.equals(ethers.utils.parseEther("100"));
-    // const escrow: string = orderBook.address;
-    // expect(await ethers.provider.getBalance(escrow)).to.be.equals(ethers.utils.parseEther("100"));
- })
-});
+      await expect(orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.1"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+        {
+          value: ethers.utils.parseEther("0.1")
+        }
+      )).to.be.revertedWith("Invalid matic amount for createLimitSellOrder");
+    });
+
+    it("Create Limit Order - should be reverted with invalid time force value",async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
+
+      await expect(orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.1"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp - 3600,
+        OrderType.BUY,
+        {
+          value: ethers.utils.parseEther("10")
+        }
+      )).to.be.revertedWith("Invalid time limit");
+    });
+
+    it("Create buy limit order - should be able to create",async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
+
+      await orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.1"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.BUY,
+        {
+          value: ethers.utils.parseEther("10")
+        }
+      );
+    });
+
+    it("Check orderbook status after create new buy limit order: ",async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const result = await orderBook.orderBook(3, OrderType.BUY);
+      
+      expect(await orderBook.OrderCountByUser(owner.address)).to.be.equals(1);
+      expect(result[1].length).to.be.equals(1);
+    });
+
+    it("Create sell limit order - should be able to create",async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const currentBlock = await ethers.provider.getBlock("latest");
+
+      await orderBook.createLimitOrder(
+        ethers.utils.parseEther("0.2"),
+        ethers.utils.parseEther("100"),
+        currentBlock.timestamp + 3600,
+        OrderType.SELL,
+      );
+    });
+
+    it("Check orderbook status after create new sell limit order: ",async () => {
+      const { orderBook, owner, user1 } = await loadFixture(basicFixture);
+      const result = await orderBook.orderBook(3, OrderType.SELL);
+
+      expect(await orderBook.OrderCountByUser(owner.address)).to.be.equals(2);
+      expect(result[1].length).to.be.equals(1);
+    });
+  });
+
+  describe("Create market order with enough limit orders",() => {
+    it("Create buy market order",async () => {
+      const { orderBook, owner, user1, token, treasury } = await loadFixture(basicFixture);
+      
+      const maticAmount = ethers.utils.parseEther("5");
+      const {bestAskOrder} = await orderBook.getLatestRate();
+      const estimatedPurchasableTokenAmount = parseEther("1").mul(maticAmount).mul(9500).div(10000).div(bestAskOrder.maticValue);
+      const beforeTokenBalance = await token.balanceOf(user1.address);
+      await orderBook.connect(user1).createBuyMarketOrder({value: maticAmount});
+      const afterTokenBalance = await token.balanceOf(user1.address);
+
+      expect(afterTokenBalance.sub(beforeTokenBalance)).to.be.equals(estimatedPurchasableTokenAmount);
+    })
+
+    it("Check order book status after buy",async () => {
+      const { orderBook, owner, user1, token, treasury } = await loadFixture(basicFixture);
+      const res = await orderBook.orderBook(3, OrderType.SELL);
+      console.log(res[1])
+    })
+
+    it("Create sell market order",async () => {
+      const { orderBook, owner, user1, user2, token, treasury } = await loadFixture(basicFixture);
+      
+      const sellTokenAmount = ethers.utils.parseEther("10");
+      const {bestBidOrder} = await orderBook.getLatestRate();
+      const estimatedSellableMaticAmount = sellTokenAmount.mul(9500).div(10000).mul(bestBidOrder.maticValue).div(parseEther("1"));
+      const beforeMaticBalance = await ethers.provider.getBalance(user2.address);
+      await orderBook.connect(user2).createSellMarketOrder(sellTokenAmount);
+      const afterMaticBalance = await ethers.provider.getBalance(user2.address);
+
+      // expect(afterMaticBalance.sub(beforeMaticBalance)).to.be.equals(estimatedSellableMaticAmount);
+    })
+
+    it("Check order book status after sell",async () => {
+      const { orderBook, owner, user1, token, treasury } = await loadFixture(basicFixture);
+      const res = await orderBook.orderBook(3, OrderType.BUY);
+      console.log(res[1])
+    })
+  })
+  
+})

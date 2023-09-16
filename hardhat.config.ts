@@ -86,22 +86,6 @@ const config: CustomUserConfig = {
   defaultNetwork: "hardhat",
 
   networks: {
-    hardhat: {
-      hardfork: 'istanbul',
-      accounts: {
-        accountsBalance: utils.parseUnits('1', 36).toString(),
-        count: 10,
-      },
-      // forking: {
-      //   blockNumber: 14201600,
-      //   url: node('mainnet'), // May 31, 2021
-      // },
-      // gas: 9500000,
-      // gasPrice: 1000000, // TODO: Consider removing this again.
-      // ...(process.env.COVERAGE && {
-      //   allowUnlimitedContractSize: true,
-      // }),
-    },
     mainnet: {
       hardfork: 'istanbul',
       url: node('mainnet'),

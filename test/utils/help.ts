@@ -1,6 +1,11 @@
 import { BigNumber } from "ethers";
 import { ethers } from "hardhat";
 
+export enum OrderType {
+  BUY,
+  SELL
+}
+
 export const getBlockTimeStamp = async () => {
   const block = await ethers.provider.getBlock("latest");
 
