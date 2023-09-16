@@ -23,13 +23,14 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
     mapping(address => uint256) public OrderCountByUser; // Add Count
 
-    constructor(address _token, uint256 _buyFeeBips, uint256 _sellFeeBips) {
+    constructor(address _token, uint256 _buyFeeBips, uint256 _sellFeeBips, address _treasury) {
         require(_token != address(0), "Invalid Token");
         require(_buyFeeBips < BASE_BIPS, "Invalid Buy Fee");
         require(_sellFeeBips < BASE_BIPS, "Invalid Sell Fee");
         tokenAddress = _token;
         buyFeeBips = _buyFeeBips;
         sellFeeBips = _sellFeeBips;
+        treasury = _treasury;
     }
 
     /**
@@ -56,6 +57,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
 
         uint256 tokenAmount = 0;
         require(activeSellOrders.length > 0, "Insufficient SellOrders");
+
         for (uint256 i = activeSellOrders.length - 1; i >= 0; i--) {
             Order storage sellOrder = activeSellOrders[i];
             if (isInvalidOrder(sellOrder)) {
@@ -241,7 +243,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 "Invalid matic amount"
             );
         } else {
-            require(msg.value == 0, "Invalid matic amount");
+            require(msg.value == 0, "Invalid matic amount for createLimitSellOrder");
             IERC20(tokenAddress).transferFrom(
                 msg.sender,
                 address(this),
@@ -577,7 +579,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     function getAmountDeductFee(uint256 amount, OrderType orderType) internal view returns(uint256 realAmount, uint256 feeAmount) {
         uint256 feeBips = orderType == OrderType.BUY ? buyFeeBips : sellFeeBips;
 
-        realAmount = amount * (BASE_BIPS - feeBips);
+        realAmount = amount * (BASE_BIPS - feeBips) / BASE_BIPS;
         feeAmount = amount - realAmount;
     }
 }
