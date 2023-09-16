@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOrderBook} from "./interfaces/IOrderBook.sol";
+import {IOracle} from "./interfaces/IOracle.sol";
 
 contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     Order[] public activeBuyOrders;
@@ -21,13 +22,17 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     // Price decimals. We set price wei unit. so 1 $ACME = 0.01 $Matic means price = 10 ** 16.
     uint256 private constant price_decimals = 18;
     address public treasury;
+    address public oracle; // matic-usd price oracle
 
     mapping(address => uint256) public OrderCountByUser; // Add Count
 
-    constructor(address _token, address _treasury) {
+    constructor(address _token, address _treasury, address _oracle) {
         require(_token != address(0), "Invalid Token");
+        require(_treasury != address(0), "Invalid Token");
+        require(_oracle != address(0), "Invalid Token");
         tokenAddress = _token;
         treasury = _treasury;
+        oracle = _oracle;
     }
 
     /**
@@ -338,7 +343,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
                 : buyOrder.remainQuantity;
 
             uint256 sellerDesiredMaticAmount = sellOrder.desiredPrice *
-                tokenAmount;
+                tokenAmount / 10 ** price_decimals;
             // send matic to seller
             (uint256 realAmount, uint256 feeAmount) = getAmountDeductFee(sellerDesiredMaticAmount, OrderType.SELL);
             payable(sellOrder.trader).transfer(realAmount);
@@ -401,25 +406,39 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     function getLatestRate()
         external
         view
-        returns (Order memory bestBidOrder, Order memory bestAskOrder)
+        returns (RecentOrder memory bestBidOrder, RecentOrder memory bestAskOrder)
     {
+        (, uint256 price) = IOracle(oracle).getLatestRoundData();
+
         if (activeBuyOrders.length > 0)  {
-          bestBidOrder = activeBuyOrders[activeBuyOrders.length - 1];
+          Order memory order = activeBuyOrders[activeBuyOrders.length - 1];
+          bestBidOrder = RecentOrder(
+            price * order.desiredPrice,
+            order.desiredPrice,
+            order.remainQuantity
+          );
         }
 
         if (activeSellOrders.length > 0) {
-            bestAskOrder = activeSellOrders[activeSellOrders.length - 1];
+            Order memory order = activeSellOrders[activeSellOrders.length - 1];
+            bestAskOrder = RecentOrder(
+                price * order.desiredPrice,
+                order.desiredPrice,
+                order.remainQuantity
+            );
         }
     }
 
     function orderBook(
         uint256 depth,
         OrderType orderType
-    ) external view returns (Order[] memory) {
+    ) external view returns (uint256, Order[] memory) {
+        (, uint256 price) = IOracle(oracle).getLatestRoundData();
+
         if (orderType == OrderType.BUY) {
             Order[] memory bestActiveBuyOrders = new Order[](depth);
             if (depth >= activeBuyOrders.length) {
-                return activeBuyOrders;
+                return (price, activeBuyOrders);
             }
             for (
                 uint256 i = activeBuyOrders.length - 1;
@@ -428,11 +447,11 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             ) {
                 bestActiveBuyOrders[i] = activeBuyOrders[i];
             }
-            return bestActiveBuyOrders;
+            return (price, bestActiveBuyOrders);
         } else {
             Order[] memory bestActiveSellOrders = new Order[](depth);
             if (depth >= activeSellOrders.length) {
-                return activeSellOrders;
+                return (price, activeSellOrders);
             }
             for (
                 uint256 i = activeSellOrders.length - 1;
@@ -441,7 +460,7 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
             ) {
                 bestActiveSellOrders[i] = activeBuyOrders[i];
             }
-            return bestActiveSellOrders;
+            return (price, bestActiveSellOrders);
         }
     }
 
@@ -576,6 +595,11 @@ contract OrderBook is IOrderBook, Ownable, ReentrancyGuard {
     function setTreasury(address _treasury) external onlyOwner {
         require(_treasury != address(0), "Invalid address");
         treasury = _treasury;
+    }
+
+    function setOracle(address _oracle) external onlyOwner {
+        require(_oracle != address(0), "Invalid address");
+        oracle = _oracle;
     }
 
     function getAmountDeductFee(uint256 amount, OrderType orderType) internal view returns(uint256 realAmount, uint256 feeAmount) {

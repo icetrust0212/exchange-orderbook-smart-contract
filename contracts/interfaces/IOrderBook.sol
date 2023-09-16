@@ -24,6 +24,12 @@ interface IOrderBook {
         uint256 lastTradeTimestamp;
     }
 
+    struct RecentOrder {
+        uint256 dollars;
+        uint256 maticValue;
+        uint256 amount;
+    }
+
     event OrderCanceled(
         uint256 indexed orderId,
         address indexed trader
